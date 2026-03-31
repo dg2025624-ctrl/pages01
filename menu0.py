@@ -187,7 +187,7 @@ hr { border-color: var(--border) !important; }
 """, unsafe_allow_html=True)
 
 
-# ── Data generation (based on public environmental data estimates) ─────────────
+# ── Data generation ───────────────────────────────────────────────────────────
 @st.cache_data
 def build_data():
     np.random.seed(42)
@@ -272,15 +272,26 @@ EVENTS = {
     2019:"미세먼지 사회재난 지정",2020:"코로나19 (교통 감소)",2021:"WHO 기준 강화",
 }
 
+# ✅ BASE에서 xaxis/yaxis 제거 — 축은 항상 update_xaxes/update_yaxes 로만 적용
 BASE = dict(
     paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
     font=dict(family="Noto Sans KR, sans-serif", color="#e8ddd0", size=11),
-    xaxis=dict(gridcolor="#2e2720", showgrid=True, zeroline=False, linecolor="#2e2720"),
-    yaxis=dict(gridcolor="#2e2720", showgrid=True, zeroline=False, linecolor="#2e2720"),
     margin=dict(l=10, r=10, t=44, b=10),
     legend=dict(bgcolor="rgba(0,0,0,0)", bordercolor="#2e2720"),
     hovermode="x unified",
 )
+
+AXIS_STYLE = dict(gridcolor="#2e2720", showgrid=True, zeroline=False, linecolor="#2e2720")
+
+
+def apply_axes(fig, dtick_x=None):
+    """모든 차트에 일관된 축 스타일 적용 (update_layout과 키 충돌 없음)."""
+    x_kw = dict(**AXIS_STYLE)
+    if dtick_x is not None:
+        x_kw["dtick"] = dtick_x
+    fig.update_xaxes(**x_kw)
+    fig.update_yaxes(**AXIS_STYLE)
+
 
 def aqi_label(v):
     if v <= 15:  return "좋음",     "aqi-good"
@@ -327,17 +338,17 @@ with st.sidebar:
 
 
 # ── Filter ────────────────────────────────────────────────────────────────────
-mask   = (df_annual["연도"] >= year_range[0]) & (df_annual["연도"] <= year_range[1])
-df_f   = df_annual[mask].copy()
-df_s   = df_f[df_f["지역"] == "서울"]
-latest = int(df_f["연도"].max())
+mask     = (df_annual["연도"] >= year_range[0]) & (df_annual["연도"] <= year_range[1])
+df_f     = df_annual[mask].copy()
+df_s     = df_f[df_f["지역"] == "서울"]
+latest   = int(df_f["연도"].max())
 earliest = int(df_f["연도"].min())
 
 lv_arr = df_s[df_s["연도"] == latest][col_key].values
 ev_arr = df_s[df_s["연도"] == earliest][col_key].values
 lv = float(lv_arr[0]) if len(lv_arr) else 0
 ev = float(ev_arr[0]) if len(ev_arr) else 0
-pct_chg = (lv - ev) / ev * 100 if ev > 0 else 0
+pct_chg      = (lv - ev) / ev * 100 if ev > 0 else 0
 exceed_today = int(df_exceed[df_exceed["연도"] == latest]["PM2.5 초과일"].values[0]) \
                if latest in df_exceed["연도"].values else 0
 aql, aqc = aqi_label(lv)
@@ -364,7 +375,7 @@ with k1:
     </div>""", unsafe_allow_html=True)
 
 with k2:
-    dcls = "kpi-delta-pos" if pct_chg < 0 else "kpi-delta-neg"
+    dcls  = "kpi-delta-pos" if pct_chg < 0 else "kpi-delta-neg"
     arrow = "▼" if pct_chg < 0 else "▲"
     st.markdown(f"""<div class="kpi-card">
       <div class="kpi-label">50년 변화율</div>
@@ -425,7 +436,7 @@ with tab1:
         display_regions = sel_regions if sel_regions else ["서울"]
 
         for region in display_regions:
-            rdf = df_f[df_f["지역"] == region].sort_values("연도")
+            rdf   = df_f[df_f["지역"] == region].sort_values("연도")
             color = REGION_COLORS.get(region, "#c97b2e")
             r, g, b = int(color[1:3],16), int(color[3:5],16), int(color[5:7],16)
             is_solo = len(display_regions) == 1
@@ -462,20 +473,20 @@ with tab1:
                         font=dict(size=8, color="#7a6e62"),
                         textangle=-60, xanchor="left")
 
+        # ✅ 핵심 수정: xaxis 인자를 update_layout에서 제거, apply_axes()로 분리
         fig.update_layout(**BASE, height=460,
-            yaxis_title=f"{col_key} 농도 (μg/m³)", xaxis_title="",
-            xaxis=dict(**BASE["xaxis"], dtick=5),
+            yaxis_title=f"{col_key} 농도 (μg/m³)",
             title=f"한국 {col_key} 연평균 농도 ({year_range[0]}–{year_range[1]})")
+        apply_axes(fig, dtick_x=5)
         st.plotly_chart(fig, use_container_width=True)
 
     with col_side:
         st.markdown('<div class="section-label">최신 연도 지역 현황</div>', unsafe_allow_html=True)
         latest_df = df_annual[df_annual["연도"] == latest].sort_values(col_key)
-        max_val = float(latest_df[col_key].max())
+        max_val   = float(latest_df[col_key].max())
         for _, row in latest_df.iterrows():
             val   = float(row[col_key])
             color = REGION_COLORS.get(row["지역"], "#c97b2e")
-            r, g, b = int(color[1:3],16), int(color[3:5],16), int(color[5:7],16)
             ratio = val / max_val * 100
             lbl, lcls = aqi_label(val)
             st.markdown(f"""
@@ -498,11 +509,11 @@ with tab1:
         improve_rows = []
         for region in ALL_REGIONS:
             rdf = df_annual[df_annual["지역"] == region]
-            v0 = rdf[rdf["연도"] == rdf["연도"].min()][col_key].values
-            v1 = rdf[rdf["연도"] == rdf["연도"].max()][col_key].values
+            v0  = rdf[rdf["연도"] == rdf["연도"].min()][col_key].values
+            v1  = rdf[rdf["연도"] == rdf["연도"].max()][col_key].values
             if len(v0) and len(v1):
                 improve_rows.append({"지역": region, "개선율": (v0[0]-v1[0])/v0[0]*100})
-        top3 = sorted(improve_rows, key=lambda x: x["개선율"], reverse=True)[:3]
+        top3   = sorted(improve_rows, key=lambda x: x["개선율"], reverse=True)[:3]
         medals = ["🥇","🥈","🥉"]
         for i, r in enumerate(top3):
             st.markdown(f"""
@@ -523,7 +534,7 @@ with tab2:
     with c1:
         fig = go.Figure()
         for region in ALL_REGIONS:
-            rdf = df_f[df_f["지역"] == region][col_key]
+            rdf   = df_f[df_f["지역"] == region][col_key]
             color = REGION_COLORS.get(region, "#c97b2e")
             r, g, b = int(color[1:3],16), int(color[3:5],16), int(color[5:7],16)
             fig.add_trace(go.Box(
@@ -540,10 +551,10 @@ with tab2:
         fig.update_layout(**BASE, height=400, showlegend=False,
             title=f"지역별 {col_key} 분포 ({year_range[0]}–{year_range[1]})",
             yaxis_title=f"{col_key} (μg/m³)")
+        apply_axes(fig)
         st.plotly_chart(fig, use_container_width=True)
 
     with c2:
-        # 5-year average heatmap
         decade_labels, decade_data = [], {r: [] for r in ALL_REGIONS}
         for ds in range(1975, 2025, 5):
             de = ds + 4
@@ -554,7 +565,7 @@ with tab2:
                 decade_data[region].append(float(sub[col_key].mean()) if len(sub) else 0)
 
         z_vals = [decade_data[r] for r in ALL_REGIONS]
-        fig2 = go.Figure(go.Heatmap(
+        fig2   = go.Figure(go.Heatmap(
             z=z_vals, x=decade_labels, y=ALL_REGIONS,
             colorscale=[[0,"#1a3a1a"],[0.35,"#4a3d1a"],[0.65,"#4a2a1a"],[1,"#7a1a1a"]],
             text=[[f"{v:.0f}" for v in row] for row in z_vals],
@@ -564,6 +575,7 @@ with tab2:
         ))
         fig2.update_layout(**BASE, height=400,
             title=f"지역×5년 평균 히트맵 ({col_key} μg/m³)")
+        apply_axes(fig2)
         st.plotly_chart(fig2, use_container_width=True)
 
     st.markdown('<div class="section-label" style="margin-top:0.5rem;">연도별 지역 순위</div>', unsafe_allow_html=True)
@@ -582,6 +594,7 @@ with tab2:
     fig3.update_layout(**BASE, height=320,
         title=f"{sel_yr}년 지역별 {col_key} 농도 비교",
         xaxis_title=f"{col_key} (μg/m³)", yaxis_title="")
+    apply_axes(fig3)
     st.plotly_chart(fig3, use_container_width=True)
 
 
@@ -630,11 +643,10 @@ with tab3:
             "❄️ 겨울 (12–2월)":[11,0,1],
         }
         for sname, midx in seasons.items():
-            sdf  = df_monthly.iloc[midx]
-            sp10 = float(sdf["PM10"].mean())
-            sp25 = float(sdf["PM2.5"].mean())
-            _, cls25 = aqi_label(sp25)
-            lbl25, _ = aqi_label(sp25)
+            sdf   = df_monthly.iloc[midx]
+            sp10  = float(sdf["PM10"].mean())
+            sp25  = float(sdf["PM2.5"].mean())
+            lbl25, cls25 = aqi_label(sp25)
             st.markdown(f"""
             <div style="background:var(--surface2);border:1px solid var(--border);
             border-radius:10px;padding:0.8rem 1rem;margin-bottom:0.6rem;">
@@ -654,7 +666,6 @@ with tab3:
               </div>
             </div>""", unsafe_allow_html=True)
 
-    # Polar / radar
     st.markdown('<div class="section-label" style="margin-top:0.5rem;">계절별 농도 레이더</div>', unsafe_allow_html=True)
     theta  = ["봄","여름","가을","겨울","봄"]
     s_pm10 = [df_monthly.iloc[[2,3,4]]["PM10"].mean(),  df_monthly.iloc[[5,6,7]]["PM10"].mean(),
@@ -719,6 +730,7 @@ with tab4:
         fig.update_layout(**BASE, height=360,
             yaxis_title="연간 초과일수 (일)",
             title="서울 WHO 기준 초과일수 추이")
+        apply_axes(fig, dtick_x=5)
         st.plotly_chart(fig, use_container_width=True)
 
     with c2:
@@ -745,11 +757,10 @@ with tab4:
               </div>
             </div>""", unsafe_allow_html=True)
 
-    # WHO 기준 대비 배율 추이
     st.markdown('<div class="section-label" style="margin-top:0.8rem;">WHO 기준 대비 배율 추이 (서울)</div>', unsafe_allow_html=True)
-    df_sr = df_annual[(df_annual["지역"] == "서울") &
-                      (df_annual["연도"] >= year_range[0]) &
-                      (df_annual["연도"] <= year_range[1])].sort_values("연도")
+    df_sr  = df_annual[(df_annual["지역"] == "서울") &
+                       (df_annual["연도"] >= year_range[0]) &
+                       (df_annual["연도"] <= year_range[1])].sort_values("연도")
     mult25 = df_sr["PM2.5"] / 5
     mult10 = df_sr["PM10"]  / 15
 
@@ -766,24 +777,25 @@ with tab4:
         annotation_position="top right")
     fig2.add_hrect(y0=0, y1=1, fillcolor="rgba(107,158,107,0.06)", line_width=0)
     fig2.update_layout(**BASE, height=320,
-        yaxis_title="WHO 기준 대비 배율", title="WHO 연평균 기준 대비 배율 추이")
+        yaxis_title="WHO 기준 대비 배율",
+        title="WHO 연평균 기준 대비 배율 추이")
+    apply_axes(fig2, dtick_x=5)
     st.plotly_chart(fig2, use_container_width=True)
 
-    # 10년 단위 요약 테이블
     st.markdown('<div class="section-label" style="margin-top:0.8rem;">10년 단위 요약 통계 (서울)</div>', unsafe_allow_html=True)
     decade_stats = []
     for ds in range(1975, 2025, 10):
-        de = min(ds+9, 2024)
+        de  = min(ds+9, 2024)
         sub = df_annual[(df_annual["지역"]=="서울") &
                         (df_annual["연도"]>=ds) & (df_annual["연도"]<=de)]
         if len(sub) == 0:
             continue
         decade_stats.append({
-            "기간":          f"{ds}–{de}",
-            "PM10 평균":     f"{sub['PM10'].mean():.1f} μg/m³",
-            "PM2.5 평균":    f"{sub['PM2.5'].mean():.1f} μg/m³",
-            "PM10 최대":     f"{sub['PM10'].max():.1f} μg/m³",
-            "PM2.5 최대":    f"{sub['PM2.5'].max():.1f} μg/m³",
-            "WHO PM2.5 배율":f"{sub['PM2.5'].mean()/5:.1f}×",
+            "기간":           f"{ds}–{de}",
+            "PM10 평균":      f"{sub['PM10'].mean():.1f} μg/m³",
+            "PM2.5 평균":     f"{sub['PM2.5'].mean():.1f} μg/m³",
+            "PM10 최대":      f"{sub['PM10'].max():.1f} μg/m³",
+            "PM2.5 최대":     f"{sub['PM2.5'].max():.1f} μg/m³",
+            "WHO PM2.5 배율": f"{sub['PM2.5'].mean()/5:.1f}×",
         })
     st.dataframe(pd.DataFrame(decade_stats), use_container_width=True, hide_index=True)
